@@ -1440,7 +1440,37 @@ const arTerm = r => LANG==="ar" || !r.arName ? "" : ` <span class="arn" lang="ar
 /* ---------- helpers & indexes ---------- */
 const AR = n => LANG==="ar" ? String(n).replace(/\d/g, d => "٠١٢٣٤٥٦٧٨٩"[d]) : String(n);
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-const hl = t => esc(t).replace(/\[(.+?)\]/g,'<mark class="m">$1</mark>');
+/* Coloured parts inside an Arabic word: Safari breaks the joining between
+   differently styled pieces. Keep each mark with its letter, and add a
+   zero-width joiner on both sides of a break inside a word so the letters
+   keep their connected shapes. runs: [{c:class|null, t:text}] */
+const MARK = /[ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۨ-ۭ࣓-ࣿ‌]/;
+const DUAL = new Set("بتثجحخسشصضطظعغفقكلمنهيىئـٮڡٯیکگ");
+const RJ = new Set("اأإآٱدذرزوؤةٲٳ");
+const isBase = ch => !MARK.test(ch);
+function shapeRuns(runs){
+  runs = runs.filter(r=>r.t);
+  for(let i=1;i<runs.length;i++){
+    const r = runs[i], p = runs[i-1];
+    let k = 0; while(k<r.t.length && MARK.test(r.t[k])) k++;
+    if(!k) continue;
+    if(k < r.t.length){ p.t += r.t.slice(0,k); r.t = r.t.slice(k); continue; }
+    /* the whole run is marks: keep it with its letter */
+    if(p.c || !r.c){ p.t += r.t; r.t = ""; continue; }
+    let j = p.t.length; while(j>0 && MARK.test(p.t[j-1])) j--; if(j>0) j--;
+    r.t = p.t.slice(j) + r.t; p.t = p.t.slice(0,j);
+  }
+  runs = runs.filter(r=>r.t);
+  for(let i=1;i<runs.length;i++){
+    const p = runs[i-1], r = runs[i];
+    let j = p.t.length-1; while(j>=0 && MARK.test(p.t[j])) j--;
+    const a = p.t[j], b = r.t[0];
+    if(a && b && DUAL.has(a) && (DUAL.has(b) || RJ.has(b))){ p.t += "‍"; r.t = "‍" + r.t; }
+  }
+  return runs;
+}
+const hl = t => { const runs = []; String(t).split(/(\[[^\]]*\])/).forEach(x=>{ if(x) runs.push(x[0]==="[" ? {c:"m", t:x.slice(1,-1)} : {c:null, t:x}); });
+  return shapeRuns(runs).map(r=>r.c ? `<mark class="m">${esc(r.t)}</mark>` : esc(r.t)).join(""); };
 const shuffle = a => { a=[...a]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
 const pick = a => a[Math.floor(Math.random()*a.length)];
 const $ = id => document.getElementById(id);
@@ -2008,7 +2038,8 @@ function loadSura(n){
 }
 const suraName = n => LANG==="ar" ? SURAS[n-1][5] : SURAS[n-1][0];
 const refOf = (s,a) => LANG==="ar" ? `${SURAS[s-1][5]}: ${AR(a)}` : `${SURAS[s-1][0]} ${a}`;
-const tjHTML = t => t.replace(/\{(\w)([^{}]*)\}/g, (_,c,x)=>`<span class="tj tj-${c}" data-tj="${c}">${x}</span>`);
+const tjHTML = t => { const runs = []; t.split(/(\{\w[^{}]*\})/).forEach(x=>{ if(x) runs.push(x[0]==="{" ? {c:x[1], t:x.slice(2,-1)} : {c:null, t:x}); });
+  return shapeRuns(runs).map(r=>r.c ? `<span class="tj tj-${r.c}" data-tj="${r.c}">${r.t}</span>` : r.t).join(""); };
 const plain = t => t.replace(/\{\w([^{}]*)\}/g,"$1");
 const bare = w => w.replace(/[ؐ-ًؚ-ٰٟۖ-ۭـ‌ٱ]/g, m=>m==="ٱ"?"ا":"").replace(/[أإآ]/g,"ا").replace(/ى/g,"ي");
 
